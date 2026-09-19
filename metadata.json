@@ -1,0 +1,6 @@
+{
+  "name": "Seguimiento Solar & Rentabilidad",
+  "description": "Control y seguimiento de generación solar en kWh, autoconsumo, excedentes y rentabilidad en euros con sincronización en tiempo real multidispositivo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

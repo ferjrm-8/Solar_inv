@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "solar_record": {
+      "title": "Solar Monthly Record",
+      "description": "Monthly solar generation, consumption and economic metrics",
+      "properties": {
+        "id": { "type": "string", "description": "Unique key (e.g., 2023-05)" },
+        "periodLabel": { "type": "string", "description": "Display label e.g., Mayo 23" },
+        "year": { "type": "number", "description": "Calendar year" },
+        "month": { "type": "number", "description": "Month 1-12" },
+        "string1Teorica": { "type": "number", "description": "Generación teórica string 1 (+100º) en kWh" },
+        "string2Teorica": { "type": "number", "description": "Generación teórica string 2 (-80º) en kWh" },
+        "produccionTeoricaTotal": { "type": "number", "description": "Suma teórica kWh" },
+        "realAnterior": { "type": "number", "description": "Consumo año anterior en kWh" },
+        "expectativaGasto": { "type": "number", "description": "Expectativa de gasto en euros" },
+        "consumoTotalReal": { "type": "number", "description": "Consumo real vivienda en kWh" },
+        "produccionReal": { "type": "number", "description": "Producción solar real generada en kWh" },
+        "autoconsumo": { "type": "number", "description": "Energía solar autoconsumida en kWh" },
+        "consumoRed": { "type": "number", "description": "Energía importada de la red en kWh" },
+        "excedentes": { "type": "number", "description": "Energía solar vertida a la red en kWh" },
+        "diferenciaKwh": { "type": "number", "description": "Balance neto kWh (producción - consumo)" },
+        "valorAutoconsumo": { "type": "number", "description": "Valor económico del autoconsumo en €" },
+        "valorConsumoRed": { "type": "number", "description": "Coste de la energía de red en €" },
+        "valorExcedentes": { "type": "number", "description": "Compensación por excedentes en €" },
+        "diferenciaEuros": { "type": "number", "description": "Diferencia económica € (excedentes - consumo red)" },
+        "quedaBateriaSb": { "type": "number", "description": "Saldo en batería virtual / Solar Bank en €" },
+        "facturaReal": { "type": "number", "description": "Importe factura final pagada en €" },
+        "ahorroDirecto": { "type": "number", "description": "Ahorro total directo en € (autoconsumo + excedentes)" },
+        "notas": { "type": "string", "description": "Notas u observaciones del mes" }
+      },
+      "required": ["periodLabel", "year", "month", "produccionReal", "consumoTotalReal"]
+    },
+    "user_settings": {
+      "title": "Solar Installation Settings",
+      "description": "User configuration for solar system parameters",
+      "properties": {
+        "potenciaPicoKw": { "type": "number", "description": "Potencia instalada en kWp" },
+        "inversionTotal": { "type": "number", "description": "Coste inicial de la instalación fotovoltaica en €" },
+        "precioMedioKwh": { "type": "number", "description": "Precio estimado kWh red en €" },
+        "precioExcedenteKwh": { "type": "number", "description": "Precio compensación excedente en €/kWh" }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Registros privados de usuario autenticado
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /{allSubcollections=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Sistemas compartidos con sincronización multidispositivo en tiempo real
+    match /shared_systems/{systemId} {
+      allow read, write: if true;
+      
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+  }
+}
