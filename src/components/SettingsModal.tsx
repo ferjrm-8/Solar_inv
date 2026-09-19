@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Settings as SettingsIcon, Calendar, Zap, Euro, Check, RefreshCw } from 'lucide-react';
 import { SolarSettings, SolarRecord } from '../types/solar';
 import { MONTH_NAMES, getCycleDescription, getCycleLabelForMonth } from '../utils/cycleHelper';
@@ -23,6 +23,13 @@ export function SettingsModal({
   const [formSettings, setFormSettings] = useState<SolarSettings>({ ...settings });
   const [recalculateExisting, setRecalculateExisting] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Synchronize form values whenever modal opens or settings update
+  useEffect(() => {
+    if (isOpen) {
+      setFormSettings({ ...settings });
+    }
+  }, [isOpen, settings]);
 
   if (!isOpen) return null;
 
@@ -149,11 +156,11 @@ export function SettingsModal({
                     id="input-setting-precio-red"
                     type="number"
                     step="0.001"
-                    value={formSettings.precioKwhRedMedio}
+                    value={formSettings.precioKwhRedMedio ?? ''}
                     onChange={(e) =>
                       setFormSettings({
                         ...formSettings,
-                        precioKwhRedMedio: Number(e.target.value),
+                        precioKwhRedMedio: e.target.value === '' ? 0 : Number(e.target.value),
                       })
                     }
                     className="w-full px-3 py-2 bg-[#111a12] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-bold text-white text-xs"
@@ -171,11 +178,11 @@ export function SettingsModal({
                     id="input-setting-precio-excedente"
                     type="number"
                     step="0.001"
-                    value={formSettings.precioKwhExcedenteMedio}
+                    value={formSettings.precioKwhExcedenteMedio ?? ''}
                     onChange={(e) =>
                       setFormSettings({
                         ...formSettings,
-                        precioKwhExcedenteMedio: Number(e.target.value),
+                        precioKwhExcedenteMedio: e.target.value === '' ? 0 : Number(e.target.value),
                       })
                     }
                     className="w-full px-3 py-2 bg-[#111a12] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-bold text-teal-300 text-xs"
@@ -199,16 +206,17 @@ export function SettingsModal({
                   Potencia Pico (kWp)
                 </label>
                 <input
+                  id="input-setting-potencia"
                   type="number"
                   step="0.01"
-                  value={formSettings.potenciaPicoKw}
+                  value={formSettings.potenciaPicoKw ?? ''}
                   onChange={(e) =>
                     setFormSettings({
                       ...formSettings,
-                      potenciaPicoKw: Number(e.target.value),
+                      potenciaPicoKw: e.target.value === '' ? 0 : Number(e.target.value),
                     })
                   }
-                  className="w-full px-3 py-2 bg-[#111a12] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 text-white text-xs"
+                  className="w-full px-3 py-2 bg-[#111a12] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 text-white text-xs font-semibold"
                 />
               </div>
 
@@ -217,13 +225,14 @@ export function SettingsModal({
                   Inversión Total (€)
                 </label>
                 <input
+                  id="input-setting-inversion"
                   type="number"
                   step="1"
-                  value={formSettings.inversionTotal}
+                  value={formSettings.inversionTotal ?? ''}
                   onChange={(e) =>
                     setFormSettings({
                       ...formSettings,
-                      inversionTotal: Number(e.target.value),
+                      inversionTotal: e.target.value === '' ? 0 : Number(e.target.value),
                     })
                   }
                   className="w-full px-3 py-2 bg-[#111a12] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 text-white text-xs font-bold"

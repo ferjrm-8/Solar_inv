@@ -238,12 +238,12 @@ export function subscribeToSolarRecords(
   return unsubscribe;
 }
 
-// Subscribe to settings with offline-first support
+// Subscribe to settings with cloud-first priority and offline fallback
 export function subscribeToSettings(
   systemKey: string,
   onData: (settings: SolarSettings) => void
 ) {
-  // 1. Emit local cached settings immediately
+  // 1. Emit local cached settings immediately for instant rendering
   const cachedSettings = getLocalSettings(systemKey);
   onData(cachedSettings);
 
@@ -253,17 +253,21 @@ export function subscribeToSettings(
     (snap) => {
       if (snap.exists()) {
         const data = snap.data() as SolarSettings;
-        saveLocalSettings(systemKey, data);
-        onData(data);
+        const merged: SolarSettings = { ...DEFAULT_SOLAR_SETTINGS, ...data };
+        saveLocalSettings(systemKey, merged);
+        onData(merged);
       } else {
-        // Seed default
-        setDoc(settingsDoc, DEFAULT_SOLAR_SETTINGS, { merge: true }).catch(console.warn);
-        saveLocalSettings(systemKey, DEFAULT_SOLAR_SETTINGS);
-        onData(DEFAULT_SOLAR_SETTINGS);
+        // Cloud does not have settings yet for this systemKey: seed with current local or default
+        const toSeed = getLocalSettings(systemKey);
+        setDoc(settingsDoc, { ...toSeed, updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
+          console.warn('Notice seeding settings to cloud:', err?.message || err);
+        });
+        saveLocalSettings(systemKey, toSeed);
+        onData(toSeed);
       }
     },
     (err) => {
-      console.warn('Settings subscription notice (using local):', err.message);
+      console.warn('Settings subscription notice (using local cache):', err.message);
       onData(getLocalSettings(systemKey));
     }
   );
@@ -279,17 +283,12 @@ export async function saveRecord(systemKey: string, record: SolarRecord): Promis
     : [...current, record];
   saveLocalRecords(systemKey, updatedLocal);
 
-  const path = `shared_systems/${systemKey}/records/${record.id}`;
-  try {
-    const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
-    const dataToSave = {
-      ...record,
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(docRef, dataToSave, { merge: true });
-  } catch (error: any) {
-    console.warn('Cloud sync note on saveRecord:', error?.message || error);
-  }
+  const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
+  const dataToSave = {
+    ...record,
+    updatedAt: new Date().toISOString(),
+  };
+  await setDoc(docRef, dataToSave, { merge: true });
 }
 
 // Delete a single month record
@@ -298,41 +297,26 @@ export async function deleteRecord(systemKey: string, recordId: string): Promise
   const current = getLocalRecords(systemKey);
   saveLocalRecords(systemKey, current.filter(r => r.id !== recordId));
 
-  const path = `shared_systems/${systemKey}/records/${recordId}`;
-  try {
-    const docRef = doc(db, 'shared_systems', systemKey, 'records', recordId);
-    await deleteDoc(docRef);
-  } catch (error: any) {
-    console.warn('Cloud sync note on deleteRecord:', error?.message || error);
-  }
+  const docRef = doc(db, 'shared_systems', systemKey, 'records', recordId);
+  await deleteDoc(docRef);
 }
 
 // Save system settings (potencia pico, inversión, etc.)
 export async function saveSettings(systemKey: string, settings: SolarSettings): Promise<void> {
   saveLocalSettings(systemKey, settings);
-  const path = `shared_systems/${systemKey}/config/settings`;
-  try {
-    const docRef = doc(db, 'shared_systems', systemKey, 'config', 'settings');
-    await setDoc(docRef, settings, { merge: true });
-  } catch (error: any) {
-    console.warn('Cloud sync note on saveSettings:', error?.message || error);
-  }
+  const docRef = doc(db, 'shared_systems', systemKey, 'config', 'settings');
+  await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 // Batch save multiple records (for recalculating cycles or bulk import)
 export async function batchSaveRecords(systemKey: string, records: SolarRecord[]): Promise<void> {
   saveLocalRecords(systemKey, records);
-  const path = `shared_systems/${systemKey}/records`;
-  try {
-    const batch = writeBatch(db);
-    for (const record of records) {
-      const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
-      batch.set(docRef, { ...record, updatedAt: new Date().toISOString() }, { merge: true });
-    }
-    await batch.commit();
-  } catch (error: any) {
-    console.warn('Cloud sync note on batchSaveRecords:', error?.message || error);
+  const batch = writeBatch(db);
+  for (const record of records) {
+    const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
+    batch.set(docRef, { ...record, updatedAt: new Date().toISOString() }, { merge: true });
   }
+  await batch.commit();
 }
 
 // Initialize / Seed default records in batch

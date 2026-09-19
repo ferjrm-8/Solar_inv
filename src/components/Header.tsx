@@ -1,9 +1,11 @@
 import { Sun, Cloud, RefreshCw, Trash2, Plus, Leaf, Settings, UserCheck, User } from 'lucide-react';
 import { SyncStatus } from '../services/firebaseService';
+import { SolarSettings } from '../types/solar';
 
 interface Props {
   syncStatus: SyncStatus;
   systemKey: string;
+  settings: SolarSettings;
   onOpenSyncModal: () => void;
   onOpenSafeDelete: () => void;
   onOpenAddMonth: () => void;
@@ -13,6 +15,7 @@ interface Props {
 export function Header({
   syncStatus,
   systemKey,
+  settings,
   onOpenSyncModal,
   onOpenSafeDelete,
   onOpenAddMonth,
@@ -110,9 +113,11 @@ export function Header({
                 </h1>
               </div>
               <p className="text-[11px] sm:text-xs text-[#9bb19a] font-medium flex items-center gap-1.5 truncate">
-                <span>5,34 kWp</span>
+                <span>{settings.potenciaPicoKw} kWp</span>
                 <span className="text-[#3d543f]">•</span>
-                <span className="text-lime-300 font-semibold">Inversión 7.526 €</span>
+                <span className="text-lime-300 font-semibold">
+                  Inversión {settings.inversionTotal.toLocaleString('es-ES')} €
+                </span>
               </p>
             </div>
           </div>

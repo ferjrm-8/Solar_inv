@@ -116,8 +116,11 @@ export function MetricsOverview({ records, settings }: Props) {
             {totalAhorroDirecto.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
             <span className="text-xs font-normal text-lime-300">€</span>
           </div>
-          <div className="text-[11px] text-emerald-300 font-semibold mt-1">
-            {amortizacionPorcentaje}% amortizado
+          <div className="text-[11px] text-emerald-300 font-semibold mt-1 flex items-center justify-between">
+            <span>{amortizacionPorcentaje}% amortizado</span>
+            <span className="text-[10px] text-lime-400/80 font-normal">
+              de {settings.inversionTotal.toLocaleString('es-ES')} €
+            </span>
           </div>
         </div>
       </div>

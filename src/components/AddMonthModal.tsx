@@ -48,6 +48,14 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords, settin
 
   const [saving, setSaving] = useState(false);
 
+  // Update unit prices from settings when opening modal
+  useEffect(() => {
+    if (isOpen && settings) {
+      setPrecioKwhComprado(settings.precioKwhRedMedio);
+      setPrecioKwhVendido(settings.precioKwhExcedenteMedio);
+    }
+  }, [isOpen, settings]);
+
   // Auto-calculate cycle label when month, year, or settings change (unless manually customized)
   useEffect(() => {
     if (!customCycle) {

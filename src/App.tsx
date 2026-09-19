@@ -21,6 +21,8 @@ import {
   restoreInitialRecords,
   getSystemId,
   setSystemId,
+  getLocalRecords,
+  getLocalSettings,
   SyncStatus
 } from './services/firebaseService';
 import { SolarRecord, SolarSettings } from './types/solar';
@@ -50,7 +52,15 @@ export default function App() {
     let unsubscribeRecords: (() => void) | null = null;
     let unsubscribeSettings: (() => void) | null = null;
 
-    // Connect immediately with offline cache and real-time sync
+    // Load local cached records & settings for this key immediately
+    const localRecords = getLocalRecords(systemKey);
+    if (localRecords.length > 0) {
+      setRecords(localRecords);
+    }
+    const localSettings = getLocalSettings(systemKey);
+    setSettings(localSettings);
+
+    // Connect immediately with real-time sync from Firestore
     unsubscribeRecords = subscribeToSolarRecords(
       systemKey,
       (newRecords) => {
@@ -218,6 +228,7 @@ export default function App() {
         <Header
           syncStatus={syncStatus}
           systemKey={systemKey}
+          settings={settings}
           onOpenSyncModal={() => setIsSyncModalOpen(true)}
           onOpenSafeDelete={() => setIsSafeDeleteModalOpen(true)}
           onOpenAddMonth={() => setIsAddMonthModalOpen(true)}
