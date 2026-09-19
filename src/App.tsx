@@ -8,12 +8,15 @@ import { UserSyncModal } from './components/UserSyncModal';
 import { SafeDeleteModal } from './components/SafeDeleteModal';
 import { AddMonthModal } from './components/AddMonthModal';
 import { EditRecordModal } from './components/EditRecordModal';
+import { SettingsModal } from './components/SettingsModal';
 import { 
   ensureAuth, 
   subscribeToSolarRecords, 
   subscribeToSettings, 
   saveRecord, 
   deleteRecord, 
+  saveSettings,
+  batchSaveRecords,
   clearAllRecords, 
   restoreInitialRecords,
   getSystemId,
@@ -39,6 +42,7 @@ export default function App() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSafeDeleteModalOpen, setIsSafeDeleteModalOpen] = useState(false);
   const [isAddMonthModalOpen, setIsAddMonthModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<SolarRecord | null>(null);
 
   // Initialize Auth and Real-time listener
@@ -105,6 +109,32 @@ export default function App() {
     }
   };
 
+  // Handler: Save Settings
+  const handleSaveSettings = async (newSettings: SolarSettings) => {
+    try {
+      setSyncStatus('syncing');
+      await saveSettings(systemKey, newSettings);
+      setSettings(newSettings);
+      setSyncStatus('connected');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      setSyncStatus('error');
+    }
+  };
+
+  // Handler: Batch update records (e.g. recalculating cycle labels)
+  const handleBatchUpdateRecords = async (updatedRecords: SolarRecord[]) => {
+    try {
+      setSyncStatus('syncing');
+      await batchSaveRecords(systemKey, updatedRecords);
+      setRecords(updatedRecords);
+      setSyncStatus('connected');
+    } catch (err) {
+      console.error('Error in batch update:', err);
+      setSyncStatus('error');
+    }
+  };
+
   // Handler: Quick update single field directly from table
   const handleQuickUpdateField = async (recordId: string, field: keyof SolarRecord, value: number) => {
     const target = records.find((r) => r.id === recordId);
@@ -112,10 +142,32 @@ export default function App() {
 
     const updated: SolarRecord = { ...target, [field]: value };
 
-    if (field === 'consumoTotalReal' || field === 'autoconsumo' || field === 'produccionReal') {
+    const pCompra = field === 'precioKwhComprado' 
+      ? value 
+      : (updated.precioKwhComprado ?? (target.autoconsumo > 0 ? target.valorAutoconsumo / target.autoconsumo : settings.precioKwhRedMedio));
+    const pVenta = field === 'precioKwhVendido' 
+      ? value 
+      : (updated.precioKwhVendido ?? (target.excedentes > 0 ? target.valorExcedentes / target.excedentes : settings.precioKwhExcedenteMedio));
+
+    if (
+      field === 'consumoTotalReal' || 
+      field === 'autoconsumo' || 
+      field === 'produccionReal' ||
+      field === 'precioKwhComprado' ||
+      field === 'precioKwhVendido'
+    ) {
       updated.consumoRed = Number(Math.max(0, updated.consumoTotalReal - updated.autoconsumo).toFixed(2));
       updated.excedentes = Number(Math.max(0, updated.produccionReal - updated.autoconsumo).toFixed(2));
       updated.diferenciaKwh = Number((updated.produccionReal - updated.consumoTotalReal).toFixed(2));
+
+      // Recalculate economics
+      updated.precioKwhComprado = Number(pCompra.toFixed(4));
+      updated.precioKwhVendido = Number(pVenta.toFixed(4));
+      updated.valorAutoconsumo = Number((updated.autoconsumo * pCompra).toFixed(2));
+      updated.valorConsumoRed = Number((updated.consumoRed * pCompra).toFixed(2));
+      updated.valorExcedentes = Number((updated.excedentes * pVenta).toFixed(2));
+      updated.diferenciaEuros = Number((updated.valorExcedentes - updated.valorConsumoRed).toFixed(2));
+      updated.ahorroDirecto = Number((updated.valorAutoconsumo + updated.valorExcedentes).toFixed(2));
     }
 
     await handleSaveRecord(updated);
@@ -174,6 +226,7 @@ export default function App() {
           onOpenSyncModal={() => setIsSyncModalOpen(true)}
           onOpenSafeDelete={() => setIsSafeDeleteModalOpen(true)}
           onOpenAddMonth={() => setIsAddMonthModalOpen(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
         />
 
         {/* Main Content */}
@@ -201,7 +254,7 @@ export default function App() {
                   <Leaf className="w-4 h-4 text-lime-400" />
                 </h2>
                 <p className="text-xs text-[#8ca48a]">
-                  Haz clic sobre cualquier celda numérica para editar su valor directamente o pulsa el icono de edición
+                  Haz clic sobre cualquier celda numérica (producción, consumo, autoconsumo o precios €/kWh) para editar directamente
                 </p>
               </div>
             </div>
@@ -211,6 +264,7 @@ export default function App() {
               onEditRecord={(record) => setEditingRecord(record)}
               onQuickUpdateField={handleQuickUpdateField}
               onDeleteRecord={handleDeleteRecord}
+              settings={settings}
             />
           </section>
         </main>
@@ -221,7 +275,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="font-semibold text-[#f1f7ef]">Seguimiento Solar & Rentabilidad</span>
               <span>•</span>
-              <span className="text-[#a1ba9f]">Instalación 5,34 kWp (+100° / -80°)</span>
+              <span className="text-[#a1ba9f]">Instalación {settings.potenciaPicoKw} kWp</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-lime-400 font-medium">
@@ -253,6 +307,7 @@ export default function App() {
         onClose={() => setIsAddMonthModalOpen(false)}
         onSave={handleSaveRecord}
         existingRecords={records}
+        settings={settings}
       />
 
       <EditRecordModal
@@ -261,7 +316,18 @@ export default function App() {
         onClose={() => setEditingRecord(null)}
         onSave={handleSaveRecord}
         onDeleteRecord={handleDeleteRecord}
+        settings={settings}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        settings={settings}
+        onSaveSettings={handleSaveSettings}
+        records={records}
+        onBatchUpdateRecords={handleBatchUpdateRecords}
       />
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { Sun, Cloud, RefreshCw, Trash2, Plus, Leaf } from 'lucide-react';
+import { Sun, Cloud, RefreshCw, Trash2, Plus, Leaf, Settings } from 'lucide-react';
 import { SyncStatus } from '../services/firebaseService';
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   onOpenSyncModal: () => void;
   onOpenSafeDelete: () => void;
   onOpenAddMonth: () => void;
+  onOpenSettings: () => void;
 }
 
 export function Header({
@@ -15,6 +16,7 @@ export function Header({
   onOpenSyncModal,
   onOpenSafeDelete,
   onOpenAddMonth,
+  onOpenSettings,
 }: Props) {
   const getStatusBadge = () => {
     switch (syncStatus) {
@@ -83,6 +85,17 @@ export function Header({
           <div className="hidden md:block">
             {getStatusBadge()}
           </div>
+
+          {/* Settings & Annual Cycle button */}
+          <button
+            id="btn-open-settings"
+            onClick={onOpenSettings}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#d4e4cf] bg-[#1a261c] hover:bg-[#243527] border border-[#2e4230] transition-colors shadow-2xs"
+            title="Configuración de ciclo anual y parámetros del sistema"
+          >
+            <Settings className="w-3.5 h-3.5 text-lime-400" />
+            <span className="hidden sm:inline">Ciclo & Ajustes</span>
+          </button>
 
           {/* Sync & Multi-device */}
           <button

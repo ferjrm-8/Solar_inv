@@ -23,14 +23,18 @@ export interface SolarRecord {
   excedentes: number; // Energía solar vertida a la red (kWh) = Producción Real - Autoconsumo
   diferenciaKwh: number; // Balance energético = Producción Real - Consumo Total
 
+  // Precios unitarios de la energía (€/kWh)
+  precioKwhComprado?: number; // Precio de la electricidad comprada a la red (€/kWh)
+  precioKwhVendido?: number; // Precio de compensación de excedentes vendidos (€/kWh)
+
   // Economía y Rentabilidad (€)
-  valorAutoconsumo: number; // Valor € del autoconsumo (ahorro en factura por no comprar a la red)
-  valorConsumoRed: number; // Coste € de la energía consumida de la red
-  valorExcedentes: number; // Ingreso/compensación € por los excedentes inyectados
+  valorAutoconsumo: number; // Valor € del autoconsumo (Autoconsumo * Precio Compra)
+  valorConsumoRed: number; // Coste € de la energía de la red (Consumo Red * Precio Compra)
+  valorExcedentes: number; // Compensación € por excedentes (Excedentes * Precio Venta)
   diferenciaEuros: number; // Diferencia € = Valor Excedentes - Valor Consumo Red
   quedaBateriaSb: number; // Saldo remanente en Batería Virtual / Solar Bank (€)
   facturaReal: number; // Importe pagado en la factura de la luz (€)
-  ahorroDirecto: number; // Ahorro neto directo mensual (€)
+  ahorroDirecto: number; // Ahorro neto directo mensual (€) = Valor Autoconsumo + Valor Excedentes
   
   // Metadatos
   notas?: string;
@@ -42,6 +46,7 @@ export interface SolarSettings {
   inversionTotal: number; // Inversión total en euros (e.g. 7526 €)
   precioKwhRedMedio: number; // Estimación coste kWh de red (e.g. 0.18 €/kWh)
   precioKwhExcedenteMedio: number; // Estimación remuneración excedentes (e.g. 0.08 €/kWh)
+  mesInicioCiclo: number; // Mes de inicio del ciclo anual (1-12, por defecto 6 = Junio a Mayo)
   capacidadBateriaKwh?: number; // Capacidad si tiene batería física o virtual
   nombreSistema: string;
 }

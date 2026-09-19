@@ -5,6 +5,7 @@ export const DEFAULT_SOLAR_SETTINGS: SolarSettings = {
   inversionTotal: 7526, // Inversión total en euros
   precioKwhRedMedio: 0.18,
   precioKwhExcedenteMedio: 0.08,
+  mesInicioCiclo: 6, // Por defecto Junio (Junio a Mayo)
   nombreSistema: 'Instalación Solar Fotovoltaica 5.34 kWp',
 };
 

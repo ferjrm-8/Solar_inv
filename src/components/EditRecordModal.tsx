@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, Check, Trash2 } from 'lucide-react';
-import { SolarRecord } from '../types/solar';
+import { X, Edit3, Check, Trash2, Euro, Calendar } from 'lucide-react';
+import { SolarRecord, SolarSettings } from '../types/solar';
 
 interface Props {
   isOpen: boolean;
@@ -8,18 +8,42 @@ interface Props {
   onClose: () => void;
   onSave: (updatedRecord: SolarRecord) => Promise<void>;
   onDeleteRecord?: (recordId: string) => Promise<void>;
+  settings?: SolarSettings;
 }
 
-export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecord }: Props) {
+export function EditRecordModal({
+  isOpen,
+  record,
+  onClose,
+  onSave,
+  onDeleteRecord,
+  settings,
+}: Props) {
   const [formData, setFormData] = useState<SolarRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (record) {
-      setFormData({ ...record });
+      // If record didn't have explicit precioKwhComprado or precioKwhVendido, infer it
+      const precioCompra = record.precioKwhComprado ?? (
+        record.autoconsumo > 0
+          ? Number((record.valorAutoconsumo / record.autoconsumo).toFixed(4))
+          : (settings?.precioKwhRedMedio ?? 0.18)
+      );
+      const precioVenta = record.precioKwhVendido ?? (
+        record.excedentes > 0
+          ? Number((record.valorExcedentes / record.excedentes).toFixed(4))
+          : (settings?.precioKwhExcedenteMedio ?? 0.08)
+      );
+
+      setFormData({
+        ...record,
+        precioKwhComprado: precioCompra,
+        precioKwhVendido: precioVenta,
+      });
     }
-  }, [record]);
+  }, [record, settings]);
 
   if (!isOpen || !formData) return null;
 
@@ -28,14 +52,30 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
       if (!prev) return prev;
       const updated = { ...prev, [field]: value };
 
-      if (field === 'consumoTotalReal' || field === 'autoconsumo' || field === 'produccionReal') {
+      // Recalculate energy derivations
+      if (
+        field === 'consumoTotalReal' ||
+        field === 'autoconsumo' ||
+        field === 'produccionReal' ||
+        field === 'precioKwhComprado' ||
+        field === 'precioKwhVendido'
+      ) {
         const prod = field === 'produccionReal' ? Number(value) : updated.produccionReal;
         const cons = field === 'consumoTotalReal' ? Number(value) : updated.consumoTotalReal;
         const auto = field === 'autoconsumo' ? Number(value) : updated.autoconsumo;
+        const pCompra = field === 'precioKwhComprado' ? Number(value) : (updated.precioKwhComprado ?? 0.18);
+        const pVenta = field === 'precioKwhVendido' ? Number(value) : (updated.precioKwhVendido ?? 0.08);
 
         updated.consumoRed = Number(Math.max(0, cons - auto).toFixed(2));
         updated.excedentes = Number(Math.max(0, prod - auto).toFixed(2));
         updated.diferenciaKwh = Number((prod - cons).toFixed(2));
+
+        // Recalculate economics
+        updated.valorAutoconsumo = Number((auto * pCompra).toFixed(2));
+        updated.valorConsumoRed = Number((updated.consumoRed * pCompra).toFixed(2));
+        updated.valorExcedentes = Number((updated.excedentes * pVenta).toFixed(2));
+        updated.diferenciaEuros = Number((updated.valorExcedentes - updated.valorConsumoRed).toFixed(2));
+        updated.ahorroDirecto = Number((updated.valorAutoconsumo + updated.valorExcedentes).toFixed(2));
       }
 
       if (field === 'string1Teorica' || field === 'string2Teorica') {
@@ -93,7 +133,7 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
                 Editar Registro: {formData.periodLabel}
               </h2>
               <p className="text-xs text-[#8ca48a]">
-                Todos los campos son editables y se sincronizan en tiempo real
+                Modifica lecturas, precios unitarios de kWh (€/kWh) o ciclo anual
               </p>
             </div>
           </div>
@@ -107,10 +147,10 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
         </div>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-5">
-          {/* Main Info */}
+          {/* Main Info & Ciclo Anual */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-[#172418] rounded-xl border border-[#2b3e2d] text-xs">
             <div>
-              <label className="block text-[#8ca48a] font-medium mb-1">Etiqueta</label>
+              <label className="block text-[#8ca48a] font-medium mb-1">Etiqueta Periodo</label>
               <input
                 type="text"
                 value={formData.periodLabel}
@@ -139,52 +179,57 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
               />
             </div>
             <div>
-              <label className="block text-[#8ca48a] font-medium mb-1">Ciclo Anual</label>
+              <label className="block text-lime-400 font-semibold mb-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                Ciclo Anual
+              </label>
               <input
                 type="text"
                 value={formData.cycleLabel || ''}
                 onChange={(e) => handleChange('cycleLabel', e.target.value)}
                 placeholder="6_23-5_24"
-                className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-white"
+                className="w-full px-2.5 py-1.5 bg-[#111a12] border border-lime-700/70 rounded-lg text-lime-300 font-bold font-mono"
               />
             </div>
           </div>
 
-          {/* Theoretical values */}
-          <div className="p-3.5 rounded-xl border border-lime-900/50 bg-lime-950/20">
-            <h4 className="text-xs font-bold text-lime-300 mb-2.5">
-              Generación Teórica Estimada (kWh)
-            </h4>
-            <div className="grid grid-cols-3 gap-3 text-xs">
+          {/* CASILLAS PRECIOS DE LOS kW/h (Compra y Venta) */}
+          <div className="p-3.5 rounded-xl border border-lime-800/60 bg-lime-950/25 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-lime-300">
+              <Euro className="w-4 h-4 text-lime-400" />
+              <span>Precios Unitarios del kWh (€/kWh) para este mes</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="block text-[#8ca48a] mb-1">String 1 (+100°)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.string1Teorica}
-                  onChange={(e) => handleChange('string1Teorica', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-white"
-                />
+                <label className="block text-[#8ca48a] mb-1">
+                  Precio kWh Comprado Red (€/kWh)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={formData.precioKwhComprado ?? 0.18}
+                    onChange={(e) => handleChange('precioKwhComprado', Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-[#111a12] border border-lime-600 rounded-lg text-white font-mono font-bold"
+                  />
+                  <span className="absolute right-2.5 top-1.5 text-[10px] text-lime-400">€/kWh</span>
+                </div>
               </div>
+
               <div>
-                <label className="block text-[#8ca48a] mb-1">String 2 (-80°)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.string2Teorica}
-                  onChange={(e) => handleChange('string2Teorica', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-[#8ca48a] mb-1">Total Teórica</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.produccionTeoricaTotal}
-                  onChange={(e) => handleChange('produccionTeoricaTotal', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-lime-500 rounded-lg font-bold text-lime-300"
-                />
+                <label className="block text-[#8ca48a] mb-1">
+                  Precio kWh Vendido Excedentes (€/kWh)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={formData.precioKwhVendido ?? 0.08}
+                    onChange={(e) => handleChange('precioKwhVendido', Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-[#111a12] border border-teal-600 rounded-lg text-teal-200 font-mono font-bold"
+                  />
+                  <span className="absolute right-2.5 top-1.5 text-[10px] text-teal-400">€/kWh</span>
+                </div>
               </div>
             </div>
           </div>
@@ -271,7 +316,7 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
                   step="0.01"
                   value={formData.valorAutoconsumo}
                   onChange={(e) => handleChange('valorAutoconsumo', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-white"
+                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-lime-300 font-semibold"
                 />
               </div>
               <div>
@@ -291,11 +336,11 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
                   step="0.01"
                   value={formData.valorExcedentes}
                   onChange={(e) => handleChange('valorExcedentes', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-white"
+                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-[#314633] rounded-lg text-teal-300 font-semibold"
                 />
               </div>
               <div>
-                <label className="block text-[#8ca48a] mb-1">Diferencia (€)</label>
+                <label className="block text-[#8ca48a] mb-1">Diferencia Red (€)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -325,13 +370,13 @@ export function EditRecordModal({ isOpen, record, onClose, onSave, onDeleteRecor
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-lime-300 font-semibold mb-1">Ahorro Directo (€)</label>
+                <label className="block text-lime-300 font-semibold mb-1">Ahorro Directo Total (€)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={formData.ahorroDirecto}
                   onChange={(e) => handleChange('ahorroDirecto', Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-lime-500 rounded-lg font-bold text-[#bef264]"
+                  className="w-full px-2.5 py-1.5 bg-[#111a12] border border-lime-500 rounded-lg font-bold text-[#bef264] text-sm"
                 />
               </div>
             </div>

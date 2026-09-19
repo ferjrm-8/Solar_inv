@@ -236,6 +236,24 @@ export async function saveSettings(systemKey: string, settings: SolarSettings): 
   }
 }
 
+// Batch save multiple records (for recalculating cycles or bulk import)
+export async function batchSaveRecords(systemKey: string, records: SolarRecord[]): Promise<void> {
+  const path = `shared_systems/${systemKey}/records`;
+  try {
+    const batch = writeBatch(db);
+    for (const record of records) {
+      const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
+      batch.set(docRef, { ...record, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+    await batch.commit();
+  } catch (error: any) {
+    if (error?.code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+    throw error;
+  }
+}
+
 // Initialize / Seed default records in batch
 export async function initializeDefaultRecords(systemKey: string): Promise<void> {
   try {

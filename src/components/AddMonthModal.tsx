@@ -1,43 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { X, PlusCircle, Sparkles, Calculator } from 'lucide-react';
-import { SolarRecord } from '../types/solar';
+import { X, PlusCircle, Sparkles, Calculator, Calendar, Euro } from 'lucide-react';
+import { SolarRecord, SolarSettings } from '../types/solar';
 import { MONTHLY_THEORETICAL } from '../data/initialData';
+import { MONTH_NAMES, getCycleLabelForMonth } from '../utils/cycleHelper';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSave: (record: SolarRecord) => Promise<void>;
   existingRecords: SolarRecord[];
+  settings?: SolarSettings;
 }
 
-const MONTH_NAMES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-];
-
-export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Props) {
+export function AddMonthModal({ isOpen, onClose, onSave, existingRecords, settings }: Props) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
   // Form states
   const [year, setYear] = useState<number>(currentYear);
   const [month, setMonth] = useState<number>(currentMonth);
+  const [cycleLabel, setCycleLabel] = useState<string>('');
+  const [customCycle, setCustomCycle] = useState<boolean>(false);
+
+  // Theoretical
   const [string1Teorica, setString1Teorica] = useState<number>(422.1);
   const [string2Teorica, setString2Teorica] = useState<number>(429.87);
+
+  // Energy in kWh
   const [produccionReal, setProduccionReal] = useState<number>(850);
   const [consumoTotalReal, setConsumoTotalReal] = useState<number>(500);
   const [autoconsumo, setAutoconsumo] = useState<number>(420);
+
+  // Unit kWh prices (€/kWh) - prominent casillas requested by user!
+  const [precioKwhComprado, setPrecioKwhComprado] = useState<number>(
+    settings?.precioKwhRedMedio ?? 0.18
+  );
+  const [precioKwhVendido, setPrecioKwhVendido] = useState<number>(
+    settings?.precioKwhExcedenteMedio ?? 0.08
+  );
+
+  // Financial (€)
   const [facturaReal, setFacturaReal] = useState<number>(0);
   const [quedaBateriaSb, setQuedaBateriaSb] = useState<number>(15);
   const [expectativaGasto, setExpectativaGasto] = useState<number>(550);
   const [realAnterior, setRealAnterior] = useState<number>(480);
   const [notas, setNotas] = useState<string>('');
 
-  // Derived unit prices for auto-estimation
-  const [precioRedKwh] = useState<number>(0.16);
-  const [precioExcedenteKwh] = useState<number>(0.08);
-
   const [saving, setSaving] = useState(false);
+
+  // Auto-calculate cycle label when month, year, or settings change (unless manually customized)
+  useEffect(() => {
+    if (!customCycle) {
+      const cycleStartMonth = settings?.mesInicioCiclo ?? 6;
+      const computedCycle = getCycleLabelForMonth(year, month, cycleStartMonth);
+      setCycleLabel(computedCycle);
+    }
+  }, [year, month, settings?.mesInicioCiclo, customCycle]);
 
   // Auto update theoretical values when month changes
   useEffect(() => {
@@ -48,15 +66,21 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
     }
   }, [month]);
 
-  // Derived values calculation
+  // Derived energy values
   const produccionTeoricaTotal = Number((string1Teorica + string2Teorica).toFixed(2));
   const consumoRed = Number(Math.max(0, consumoTotalReal - autoconsumo).toFixed(2));
   const excedentes = Number(Math.max(0, produccionReal - autoconsumo).toFixed(2));
   const diferenciaKwh = Number((produccionReal - consumoTotalReal).toFixed(2));
 
-  const valorAutoconsumo = Number((autoconsumo * precioRedKwh).toFixed(2));
-  const valorConsumoRed = Number((consumoRed * precioRedKwh).toFixed(2));
-  const valorExcedentes = Number((excedentes * precioExcedenteKwh).toFixed(2));
+  // Economic calculations based on user's kWh unit prices:
+  // 1. Valor autoconsumo = autoconsumo * precioKwhComprado
+  // 2. Valor consumo red = consumoRed * precioKwhComprado
+  // 3. Valor excedentes = excedentes * precioKwhVendido
+  // 4. Diferencia € = Valor excedentes - Valor consumo red
+  // 5. Ahorro directo mensual = Valor autoconsumo + Valor excedentes
+  const valorAutoconsumo = Number((autoconsumo * precioKwhComprado).toFixed(2));
+  const valorConsumoRed = Number((consumoRed * precioKwhComprado).toFixed(2));
+  const valorExcedentes = Number((excedentes * precioKwhVendido).toFixed(2));
   const diferenciaEuros = Number((valorExcedentes - valorConsumoRed).toFixed(2));
   const ahorroDirecto = Number((valorAutoconsumo + valorExcedentes).toFixed(2));
 
@@ -70,10 +94,6 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
       const recordId = `${year}-${monthTwoDigits}`;
       const shortYear = `${year}`.slice(-2);
       const periodLabel = `${MONTH_NAMES[month - 1]} ${shortYear}`;
-      
-      const cycleStartYear = month >= 6 ? shortYear : `${Number(shortYear) - 1}`;
-      const cycleEndYear = month >= 6 ? `${Number(shortYear) + 1}` : shortYear;
-      const cycleLabel = `6_${cycleStartYear}-5_${cycleEndYear}`;
 
       const newRecord: SolarRecord = {
         id: recordId,
@@ -81,7 +101,7 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
         year,
         month,
         monthName: MONTH_NAMES[month - 1],
-        cycleLabel,
+        cycleLabel: cycleLabel.trim(),
         string1Teorica,
         string2Teorica,
         produccionTeoricaTotal,
@@ -93,6 +113,8 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
         consumoRed,
         excedentes,
         diferenciaKwh,
+        precioKwhComprado,
+        precioKwhVendido,
         valorAutoconsumo,
         valorConsumoRed,
         valorExcedentes,
@@ -129,7 +151,7 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
                 Añadir Nuevo Mes al Seguimiento
               </h2>
               <p className="text-xs text-[#8ca48a]">
-                Lecturas de generación solar, consumos y factura
+                Introduce lecturas, precios de compra/venta de kWh y ciclo anual
               </p>
             </div>
           </div>
@@ -143,71 +165,124 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
         </div>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-5">
-          {/* Period selector */}
-          <div className="p-3.5 bg-[#172418] rounded-xl border border-[#2b3e2d] grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-[#8ca48a] mb-1">Mes</label>
-              <select
-                id="select-month"
-                value={month}
-                onChange={(e) => setMonth(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs bg-[#121c13] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-medium text-white"
+          {/* Period and Annual Cycle Selection */}
+          <div className="p-4 bg-[#172418] rounded-xl border border-[#2b3e2d] space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#f1f7ef] flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-lime-400" />
+                Periodo y Ciclo Anual
+              </span>
+              <button
+                type="button"
+                onClick={() => setCustomCycle(!customCycle)}
+                className="text-[11px] text-lime-400 hover:underline font-medium"
               >
-                {MONTH_NAMES.map((name, idx) => (
-                  <option key={idx} value={idx + 1}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+                {customCycle ? 'Restaurar ciclo automático' : 'Personalizar nombre del ciclo'}
+              </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#8ca48a] mb-1">Año</label>
-              <input
-                id="input-year"
-                type="number"
-                min="2020"
-                max="2035"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs bg-[#121c13] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-medium text-white"
-              />
-            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#8ca48a] mb-1">Mes</label>
+                <select
+                  id="select-month"
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs bg-[#121c13] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-medium text-white"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={idx} value={idx + 1}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="col-span-2 sm:col-span-1">
-              <label className="block text-xs font-semibold text-[#8ca48a] mb-1">Teórica calculada</label>
-              <div className="px-3 py-2 bg-lime-950/60 border border-lime-800/60 rounded-lg text-xs font-mono font-bold text-lime-300">
-                {produccionTeoricaTotal} kWh
+              <div>
+                <label className="block text-xs font-semibold text-[#8ca48a] mb-1">Año</label>
+                <input
+                  id="input-year"
+                  type="number"
+                  min="2020"
+                  max="2035"
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs bg-[#121c13] border border-[#314633] rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-medium text-white"
+                />
+              </div>
+
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-xs font-semibold text-[#8ca48a] mb-1">
+                  Ciclo Anual
+                </label>
+                <input
+                  id="input-cycle-label"
+                  type="text"
+                  value={cycleLabel}
+                  onChange={(e) => {
+                    setCustomCycle(true);
+                    setCycleLabel(e.target.value);
+                  }}
+                  placeholder="Ej: 6_24-5_25 o 2024"
+                  className="w-full px-3 py-2 text-xs bg-[#121c13] border border-lime-700/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 font-mono font-bold text-lime-300"
+                />
               </div>
             </div>
           </div>
 
-          {/* Theoretical Strings */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-[#8ca48a] mb-1">String 1 Teórica (+100°)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={string1Teorica}
-                  onChange={(e) => setString1Teorica(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-[#172418] border border-[#2b3e2d] rounded-lg focus:outline-none focus:ring-1 focus:ring-lime-500 text-white"
-                />
-                <span className="absolute right-3 top-2 text-[10px] text-[#789276]">kWh</span>
-              </div>
+          {/* CASILLAS PRECIOS DE LOS kW/h (Compra y Venta) - Explicitly requested! */}
+          <div className="p-4 rounded-xl border border-lime-800/60 bg-lime-950/30 space-y-3">
+            <div className="flex items-center gap-2">
+              <Euro className="w-4 h-4 text-lime-400" />
+              <h3 className="text-xs font-bold text-[#f1f7ef]">
+                Precios Unitarios del kWh de este Mes (€/kWh)
+              </h3>
             </div>
-            <div>
-              <label className="block text-[#8ca48a] mb-1">String 2 Teórica (-80°)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={string2Teorica}
-                  onChange={(e) => setString2Teorica(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-[#172418] border border-[#2b3e2d] rounded-lg focus:outline-none focus:ring-1 focus:ring-lime-500 text-white"
-                />
-                <span className="absolute right-3 top-2 text-[10px] text-[#789276]">kWh</span>
+            <p className="text-[11px] text-[#8ca48a]">
+              Introduce el precio al que compraste la luz de la red y el precio al que te compensaron los excedentes vertidos.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-lime-300 mb-1">
+                  Precio kWh Comprado a la Red (€/kWh)
+                </label>
+                <div className="relative">
+                  <input
+                    id="input-precio-kwh-comprado"
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={precioKwhComprado}
+                    onChange={(e) => setPrecioKwhComprado(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs bg-[#111a12] border border-lime-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-400 font-mono font-bold text-white"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-lime-400 font-semibold">€/kWh</span>
+                </div>
+                <span className="text-[10px] text-[#8ca48a] mt-0.5 block">
+                  Utilizado para valorar el autoconsumo y el consumo de red
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-teal-300 mb-1">
+                  Precio kWh Vendido / Excedente (€/kWh)
+                </label>
+                <div className="relative">
+                  <input
+                    id="input-precio-kwh-vendido"
+                    type="number"
+                    step="0.0001"
+                    required
+                    value={precioKwhVendido}
+                    onChange={(e) => setPrecioKwhVendido(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs bg-[#111a12] border border-teal-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono font-bold text-teal-200"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-teal-400 font-semibold">€/kWh</span>
+                </div>
+                <span className="text-[10px] text-[#8ca48a] mt-0.5 block">
+                  Utilizado para valorar los excedentes solares vertidos
+                </span>
               </div>
             </div>
           </div>
@@ -293,13 +368,70 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
             </div>
           </div>
 
-          {/* Economic values (€) */}
+          {/* Theoretical Strings (Estimated) */}
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <label className="block text-[#8ca48a] mb-1">String 1 Teórica (+100°)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={string1Teorica}
+                  onChange={(e) => setString1Teorica(Number(e.target.value))}
+                  className="w-full px-3 py-1.5 bg-[#172418] border border-[#2b3e2d] rounded-lg focus:outline-none focus:ring-1 focus:ring-lime-500 text-white"
+                />
+                <span className="absolute right-3 top-2 text-[10px] text-[#789276]">kWh</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[#8ca48a] mb-1">String 2 Teórica (-80°)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={string2Teorica}
+                  onChange={(e) => setString2Teorica(Number(e.target.value))}
+                  className="w-full px-3 py-1.5 bg-[#172418] border border-[#2b3e2d] rounded-lg focus:outline-none focus:ring-1 focus:ring-lime-500 text-white"
+                />
+                <span className="absolute right-3 top-2 text-[10px] text-[#789276]">kWh</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Economic values (€) & Calculations Breakdown */}
           <div className="p-4 rounded-xl border border-lime-900/50 bg-lime-950/20 space-y-3">
             <h3 className="text-xs font-bold text-lime-300 flex items-center gap-1.5">
               <Calculator className="w-4 h-4 text-lime-400" />
-              Métricas Económicas (€)
+              Desglose Económico y Ahorro Mensual (€)
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+            {/* Calculations Breakdown */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="p-2 bg-[#111a12] rounded-lg border border-[#253927]">
+                <span className="text-[#8ca48a] block text-[10px]">Autoconsumo valorado:</span>
+                <span className="font-bold text-lime-400">{valorAutoconsumo} €</span>
+                <span className="text-[9px] text-[#6e856c] block">({autoconsumo} × {precioKwhComprado}€)</span>
+              </div>
+              <div className="p-2 bg-[#111a12] rounded-lg border border-[#253927]">
+                <span className="text-[#8ca48a] block text-[10px]">Excedentes valorados:</span>
+                <span className="font-bold text-teal-300">{valorExcedentes} €</span>
+                <span className="text-[9px] text-[#6e856c] block">({excedentes} × {precioKwhVendido}€)</span>
+              </div>
+              <div className="p-2 bg-[#111a12] rounded-lg border border-[#253927]">
+                <span className="text-[#8ca48a] block text-[10px]">Coste energía red:</span>
+                <span className="font-bold text-amber-300">{valorConsumoRed} €</span>
+                <span className="text-[9px] text-[#6e856c] block">({consumoRed} × {precioKwhComprado}€)</span>
+              </div>
+              <div className="p-2 bg-[#111a12] rounded-lg border border-[#253927]">
+                <span className="text-[#8ca48a] block text-[10px]">Diferencia red (€):</span>
+                <span className={`font-bold ${diferenciaEuros >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {diferenciaEuros >= 0 ? `+${diferenciaEuros}` : diferenciaEuros} €
+                </span>
+                <span className="text-[9px] text-[#6e856c] block">(Excedentes - Red)</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="block text-xs font-medium text-[#8ca48a] mb-1">
                   Factura Real Pagada (€)
@@ -335,12 +467,17 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords }: Prop
               </div>
             </div>
 
-            {/* Economic summary */}
-            <div className="p-2.5 bg-[#121c13] rounded-lg border border-lime-800/40 flex items-center justify-between text-xs">
-              <span className="text-[#8ca48a]">
-                Ahorro directo estimado en el mes:
-              </span>
-              <span className="font-bold text-[#bef264] text-sm">
+            {/* Total Direct Savings Summary */}
+            <div className="p-3 bg-[#111a12] rounded-xl border border-lime-700/60 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-[#ecf5ea] font-semibold block">
+                  Ahorro Directo Mensual Estimado:
+                </span>
+                <span className="text-[10px] text-[#8ca48a]">
+                  Autoconsumo valorado ({valorAutoconsumo}€) + Excedentes vendidos ({valorExcedentes}€)
+                </span>
+              </div>
+              <span className="font-extrabold text-[#bef264] text-base font-mono">
                 {ahorroDirecto} €
               </span>
             </div>
