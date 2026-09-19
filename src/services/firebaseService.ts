@@ -84,24 +84,39 @@ export function setSystemId(key: string) {
 // Safe check or initial login
 export async function ensureAuth(): Promise<User | null> {
   return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        unsubscribe();
-        resolve(user);
-      } else {
-        try {
-          const cred = await signInAnonymously(auth);
-          unsubscribe();
-          resolve(cred.user);
-        } catch (err: any) {
-          // If anonymous sign-in is not enabled in Firebase Console (auth/admin-restricted-operation),
-          // resolve gracefully as null so Firestore operates under shared system rules without crashing
-          console.info('Sesión en modo compartido/anónimo sin credencial (admin-restricted). Continuando sincronización.');
-          unsubscribe();
+    // 2-second timeout guard to ensure the app never waits on slow network or restricted domains
+    const timeout = setTimeout(() => {
+      resolve(null);
+    }, 2000);
+
+    try {
+      const unsubscribe = onAuthStateChanged(
+        auth,
+        async (user) => {
+          clearTimeout(timeout);
+          if (user) {
+            unsubscribe();
+            resolve(user);
+          } else {
+            try {
+              const cred = await signInAnonymously(auth);
+              unsubscribe();
+              resolve(cred.user);
+            } catch (err: any) {
+              unsubscribe();
+              resolve(null);
+            }
+          }
+        },
+        (err) => {
+          clearTimeout(timeout);
           resolve(null);
         }
-      }
-    });
+      );
+    } catch (e) {
+      clearTimeout(timeout);
+      resolve(null);
+    }
   });
 }
 

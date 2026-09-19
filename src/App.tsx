@@ -45,35 +45,30 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<SolarRecord | null>(null);
 
-  // Initialize Auth and Real-time listener
+  // Initialize Auth and Real-time listener immediately
   useEffect(() => {
     let unsubscribeRecords: (() => void) | null = null;
     let unsubscribeSettings: (() => void) | null = null;
 
-    const connectListeners = () => {
-      unsubscribeRecords = subscribeToSolarRecords(
-        systemKey,
-        (newRecords) => {
-          setRecords(newRecords);
-        },
-        (status) => {
-          setSyncStatus(status);
-        }
-      );
+    // Connect immediately with offline cache and real-time sync
+    unsubscribeRecords = subscribeToSolarRecords(
+      systemKey,
+      (newRecords) => {
+        setRecords(newRecords);
+      },
+      (status) => {
+        setSyncStatus(status);
+      }
+    );
 
-      unsubscribeSettings = subscribeToSettings(systemKey, (newSettings) => {
-        setSettings(newSettings);
-      });
-    };
+    unsubscribeSettings = subscribeToSettings(systemKey, (newSettings) => {
+      setSettings(newSettings);
+    });
 
-    ensureAuth()
-      .then(() => {
-        connectListeners();
-      })
-      .catch((err) => {
-        console.warn('Auth init notice:', err);
-        connectListeners();
-      });
+    // Ensure auth in background
+    ensureAuth().catch((err) => {
+      console.warn('Background auth notice:', err);
+    });
 
     return () => {
       if (unsubscribeRecords) unsubscribeRecords();
