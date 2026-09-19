@@ -112,12 +112,64 @@ export async function signInWithGoogle(): Promise<User> {
   return res.user;
 }
 
-// Subscribe to real-time solar records
+// LocalStorage cache keys
+const getStorageKeyRecords = (key: string) => `solar_records_cache_${key}`;
+const getStorageKeySettings = (key: string) => `solar_settings_cache_${key}`;
+
+export function getLocalRecords(systemKey: string): SolarRecord[] {
+  try {
+    const raw = localStorage.getItem(getStorageKeyRecords(systemKey));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Error reading local records cache:', e);
+  }
+  return INITIAL_SOLAR_RECORDS;
+}
+
+export function saveLocalRecords(systemKey: string, records: SolarRecord[]): void {
+  try {
+    localStorage.setItem(getStorageKeyRecords(systemKey), JSON.stringify(records));
+  } catch (e) {
+    console.warn('Error saving local records cache:', e);
+  }
+}
+
+export function getLocalSettings(systemKey: string): SolarSettings {
+  try {
+    const raw = localStorage.getItem(getStorageKeySettings(systemKey));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return { ...DEFAULT_SOLAR_SETTINGS, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Error reading local settings cache:', e);
+  }
+  return DEFAULT_SOLAR_SETTINGS;
+}
+
+export function saveLocalSettings(systemKey: string, settings: SolarSettings): void {
+  try {
+    localStorage.setItem(getStorageKeySettings(systemKey), JSON.stringify(settings));
+  } catch (e) {
+    console.warn('Error saving local settings cache:', e);
+  }
+}
+
+// Subscribe to real-time solar records with offline-first support
 export function subscribeToSolarRecords(
   systemKey: string,
   onData: (records: SolarRecord[]) => void,
   onStatusChange?: (status: SyncStatus, error?: string) => void
 ) {
+  // 1. Immediately emit cached data so the UI is instantaneous
+  const cached = getLocalRecords(systemKey);
+  if (cached.length > 0) {
+    onData(cached);
+  }
+
   const recordsCol = collection(db, 'shared_systems', systemKey, 'records');
   const q = query(recordsCol);
 
@@ -130,11 +182,16 @@ export function subscribeToSolarRecords(
       if (snapshot.empty) {
         // If empty in cloud, initialize with initial historical dataset
         initializeDefaultRecords(systemKey)
-          .then(() => onStatusChange?.('connected'))
-          .catch((err) => {
-            console.error('Error auto-seeding records:', err);
-            // Fallback to local
+          .then(() => {
+            saveLocalRecords(systemKey, INITIAL_SOLAR_RECORDS);
             onData(INITIAL_SOLAR_RECORDS);
+            onStatusChange?.('connected');
+          })
+          .catch((err) => {
+            console.warn('Notice auto-seeding cloud records:', err?.message || err);
+            // Fallback to local
+            const local = getLocalRecords(systemKey);
+            onData(local.length > 0 ? local : INITIAL_SOLAR_RECORDS);
             onStatusChange?.('connected');
           });
       } else {
@@ -149,49 +206,64 @@ export function subscribeToSolarRecords(
           return a.month - b.month;
         });
 
+        // Save to cache and emit
+        saveLocalRecords(systemKey, records);
         onData(records);
         onStatusChange?.('connected');
       }
     },
     (error) => {
-      console.warn('Firestore subscription status:', error.message);
-      if (error.code === 'permission-denied') {
-        handleFirestoreError(error, OperationType.LIST, `shared_systems/${systemKey}/records`);
-      }
-      onStatusChange?.('error', error.message);
-      onData(INITIAL_SOLAR_RECORDS);
+      console.warn('Firestore subscription notice (running offline/local mode):', error.message);
+      onStatusChange?.('offline', error.message);
+      const fallback = getLocalRecords(systemKey);
+      onData(fallback.length > 0 ? fallback : INITIAL_SOLAR_RECORDS);
     }
   );
 
   return unsubscribe;
 }
 
-// Subscribe to settings
+// Subscribe to settings with offline-first support
 export function subscribeToSettings(
   systemKey: string,
   onData: (settings: SolarSettings) => void
 ) {
+  // 1. Emit local cached settings immediately
+  const cachedSettings = getLocalSettings(systemKey);
+  onData(cachedSettings);
+
   const settingsDoc = doc(db, 'shared_systems', systemKey, 'config', 'settings');
   return onSnapshot(
     settingsDoc,
     (snap) => {
       if (snap.exists()) {
-        onData(snap.data() as SolarSettings);
+        const data = snap.data() as SolarSettings;
+        saveLocalSettings(systemKey, data);
+        onData(data);
       } else {
         // Seed default
-        setDoc(settingsDoc, DEFAULT_SOLAR_SETTINGS, { merge: true }).catch(console.error);
+        setDoc(settingsDoc, DEFAULT_SOLAR_SETTINGS, { merge: true }).catch(console.warn);
+        saveLocalSettings(systemKey, DEFAULT_SOLAR_SETTINGS);
         onData(DEFAULT_SOLAR_SETTINGS);
       }
     },
     (err) => {
-      console.warn('Settings subscription:', err.message);
-      onData(DEFAULT_SOLAR_SETTINGS);
+      console.warn('Settings subscription notice (using local):', err.message);
+      onData(getLocalSettings(systemKey));
     }
   );
 }
 
 // Save or edit a single month record
 export async function saveRecord(systemKey: string, record: SolarRecord): Promise<void> {
+  // Always update local cache first
+  const current = getLocalRecords(systemKey);
+  const exists = current.some(r => r.id === record.id);
+  const updatedLocal = exists 
+    ? current.map(r => r.id === record.id ? record : r)
+    : [...current, record];
+  saveLocalRecords(systemKey, updatedLocal);
+
   const path = `shared_systems/${systemKey}/records/${record.id}`;
   try {
     const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
@@ -201,43 +273,40 @@ export async function saveRecord(systemKey: string, record: SolarRecord): Promis
     };
     await setDoc(docRef, dataToSave, { merge: true });
   } catch (error: any) {
-    if (error?.code === 'permission-denied') {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-    throw error;
+    console.warn('Cloud sync note on saveRecord:', error?.message || error);
   }
 }
 
 // Delete a single month record
 export async function deleteRecord(systemKey: string, recordId: string): Promise<void> {
+  // Update local cache first
+  const current = getLocalRecords(systemKey);
+  saveLocalRecords(systemKey, current.filter(r => r.id !== recordId));
+
   const path = `shared_systems/${systemKey}/records/${recordId}`;
   try {
     const docRef = doc(db, 'shared_systems', systemKey, 'records', recordId);
     await deleteDoc(docRef);
   } catch (error: any) {
-    if (error?.code === 'permission-denied') {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-    throw error;
+    console.warn('Cloud sync note on deleteRecord:', error?.message || error);
   }
 }
 
 // Save system settings (potencia pico, inversión, etc.)
 export async function saveSettings(systemKey: string, settings: SolarSettings): Promise<void> {
+  saveLocalSettings(systemKey, settings);
   const path = `shared_systems/${systemKey}/config/settings`;
   try {
     const docRef = doc(db, 'shared_systems', systemKey, 'config', 'settings');
     await setDoc(docRef, settings, { merge: true });
   } catch (error: any) {
-    if (error?.code === 'permission-denied') {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-    throw error;
+    console.warn('Cloud sync note on saveSettings:', error?.message || error);
   }
 }
 
 // Batch save multiple records (for recalculating cycles or bulk import)
 export async function batchSaveRecords(systemKey: string, records: SolarRecord[]): Promise<void> {
+  saveLocalRecords(systemKey, records);
   const path = `shared_systems/${systemKey}/records`;
   try {
     const batch = writeBatch(db);
@@ -247,10 +316,7 @@ export async function batchSaveRecords(systemKey: string, records: SolarRecord[]
     }
     await batch.commit();
   } catch (error: any) {
-    if (error?.code === 'permission-denied') {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-    throw error;
+    console.warn('Cloud sync note on batchSaveRecords:', error?.message || error);
   }
 }
 
