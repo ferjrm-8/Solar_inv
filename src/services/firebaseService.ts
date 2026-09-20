@@ -74,11 +74,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 const DEFAULT_SYSTEM_KEY = 'mi_sistema_solar';
 
 export function getSystemId(customKey?: string): string {
-  return customKey?.trim() || localStorage.getItem('solar_sync_key') || DEFAULT_SYSTEM_KEY;
+  try {
+    return customKey?.trim() || localStorage.getItem('solar_sync_key') || DEFAULT_SYSTEM_KEY;
+  } catch {
+    return DEFAULT_SYSTEM_KEY;
+  }
 }
 
 export function setSystemId(key: string) {
-  localStorage.setItem('solar_sync_key', key.trim() || DEFAULT_SYSTEM_KEY);
+  try {
+    localStorage.setItem('solar_sync_key', key.trim() || DEFAULT_SYSTEM_KEY);
+  } catch {}
 }
 
 // Safe check or initial login

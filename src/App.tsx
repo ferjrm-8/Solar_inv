@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { MetricsOverview } from './components/MetricsOverview';
-import { SolarCharts } from './components/SolarCharts';
 import { DataTable } from './components/DataTable';
 import { EcoBackground } from './components/EcoBackground';
 import { UserSyncModal } from './components/UserSyncModal';
@@ -27,7 +26,12 @@ import {
 } from './services/firebaseService';
 import { SolarRecord, SolarSettings } from './types/solar';
 import { DEFAULT_SOLAR_SETTINGS, INITIAL_SOLAR_RECORDS } from './data/initialData';
-import { Leaf, ShieldCheck, Sun } from 'lucide-react';
+import { Leaf, ShieldCheck, Sun, BarChart3 } from 'lucide-react';
+
+// Lazy load heavy chart modules (recharts) so the core app loads instantly on mobile roaming
+const SolarCharts = lazy(() =>
+  import('./components/SolarCharts').then((module) => ({ default: module.SolarCharts }))
+);
 
 export default function App() {
   // Check URL params for system code (e.g. ?system=...)
@@ -244,11 +248,23 @@ export default function App() {
 
           {/* 2. Interactive Solar Charts */}
           <section aria-label="Gráficas Interactivas">
-            <SolarCharts
-              records={records}
-              selectedYear={selectedPeriod}
-              onSelectYear={setSelectedPeriod}
-            />
+            <Suspense
+              fallback={
+                <div className="bg-[#142015] border border-[#233525] rounded-xl p-6 flex flex-col items-center justify-center min-h-[320px] text-center">
+                  <div className="w-10 h-10 rounded-xl bg-[#1b2b1d] border border-[#2e4331] flex items-center justify-center mb-3 animate-pulse">
+                    <BarChart3 className="w-5 h-5 text-lime-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-[#f1f7ef]">Cargando visualización gráfica...</p>
+                  <p className="text-xs text-[#8ca48a] mt-1">Sincronizando curvas de producción y ahorro</p>
+                </div>
+              }
+            >
+              <SolarCharts
+                records={records}
+                selectedYear={selectedPeriod}
+                onSelectYear={setSelectedPeriod}
+              />
+            </Suspense>
           </section>
 
           {/* 3. Interactive & Editable Data Table */}

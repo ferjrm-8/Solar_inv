@@ -30,6 +30,32 @@
       }
     </style>
 
+    <!-- Capturador de diagnósticos y errores en tiempo real -->
+    <script>
+      window.__APP_MOUNTED__ = false;
+      function showLoaderError(msg) {
+        var box = document.getElementById('loader-error-box');
+        var text = document.getElementById('loader-error-msg');
+        var retry = document.getElementById('loader-actions');
+        if (box && text) {
+          box.style.display = 'block';
+          text.textContent = msg;
+        }
+        if (retry) retry.style.display = 'flex';
+      }
+      window.addEventListener('error', function(e) {
+        if (!window.__APP_MOUNTED__) {
+          var details = e.message || (e.target && e.target.src ? 'Error cargando recurso: ' + e.target.src : 'Error de script');
+          showLoaderError(details);
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(e) {
+        if (!window.__APP_MOUNTED__) {
+          showLoaderError('Fallo asíncrono: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+        }
+      });
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Carga no bloqueante de tipografía para evitar congelación en redes móviles o roaming -->
@@ -40,10 +66,10 @@
   </head>
   <body class="bg-[#0c130d] text-[#ecf5ea] antialiased font-sans" style="background-color: #0c130d;">
     <div id="root">
-      <!-- Indicador visual inmediato (se reemplaza en cuanto React monta en < 100ms) -->
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background-color:#0c130d; color:#ecf5ea; text-align:center; padding:24px;">
-        <div style="width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg, #15803d, #84cc16); display:flex; align-items:center; justify-content:center; margin-bottom:16px; box-shadow:0 0 25px rgba(132, 204, 22, 0.25); animation:pulse-sun 2s infinite ease-in-out;">
-          <svg style="width:26px; height:26px; color:#0c130d;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Indicador visual inmediato (se reemplaza en cuanto React monta) -->
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background-color:#0c130d; color:#ecf5ea; text-align:center; padding:24px; box-sizing:border-box;">
+        <div style="width:52px; height:52px; border-radius:16px; background:linear-gradient(135deg, #15803d, #84cc16); display:flex; align-items:center; justify-content:center; margin-bottom:16px; box-shadow:0 0 30px rgba(132, 204, 22, 0.28); animation:pulse-sun 2s infinite ease-in-out;">
+          <svg style="width:28px; height:28px; color:#0c130d;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2"></path>
             <path d="M12 20v2"></path>
@@ -55,25 +81,52 @@
             <path d="m19.07 4.93-1.41 1.41"></path>
           </svg>
         </div>
-        <div style="font-weight:700; font-size:16px; letter-spacing:-0.01em; color:#ecf5ea;">Seguimiento Solar & Rentabilidad</div>
-        <div id="loader-status" style="font-size:12px; color:#8ca48a; margin-top:6px;">Iniciando sistema...</div>
+        
+        <div style="font-weight:700; font-size:17px; letter-spacing:-0.01em; color:#ecf5ea;">Seguimiento Solar & Rentabilidad</div>
+        <div id="loader-status" style="font-size:13px; color:#8ca48a; margin-top:6px; min-height:20px; transition:all 0.3s ease;">Iniciando sistema...</div>
 
-        <!-- Botón de contingencia si la red en roaming es extremadamente lenta o bloquea la descarga -->
-        <button id="loader-retry" onclick="window.location.reload()" style="display:none; margin-top:20px; padding:8px 18px; background-color:#84cc16; color:#0c130d; font-weight:700; font-size:12px; border:none; border-radius:8px; cursor:pointer;">
-          Reintentar conexión
-        </button>
+        <!-- Caja de aviso de error si algo falla en la descarga o ejecución -->
+        <div id="loader-error-box" style="display:none; max-width:320px; margin-top:16px; padding:12px; background-color:#1c1314; border:1px solid #7f1d1d; border-radius:10px; font-size:12px; color:#fca5a5; word-break:break-word;">
+          <div style="font-weight:700; margin-bottom:4px;">Aviso de inicio</div>
+          <div id="loader-error-msg">Error de conexión</div>
+        </div>
+
+        <!-- Botones de contingencia para redes roaming o lentas -->
+        <div id="loader-actions" style="display:none; margin-top:20px; flex-direction:column; gap:8px; align-items:center;">
+          <button onclick="window.location.reload(true)" style="padding:9px 20px; background-color:#84cc16; color:#0c130d; font-weight:700; font-size:13px; border:none; border-radius:10px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+            Reintentar conexión
+          </button>
+          <button onclick="try { localStorage.removeItem('solar_sync_key'); } catch(e){} window.location.href = window.location.pathname + '?t=' + Date.now()" style="padding:7px 14px; background-color:#142015; border:1px solid #2e4331; color:#a1ba9f; font-size:11px; border-radius:8px; cursor:pointer;">
+            Forzar recarga sin caché
+          </button>
+        </div>
       </div>
 
       <script>
-        // Si tras 6 segundos los datos en roaming no han respondido, mostrar aviso y opción de reintento
-        setTimeout(function() {
-          var status = document.getElementById('loader-status');
-          var btn = document.getElementById('loader-retry');
-          if (status && document.getElementById('root') && document.getElementById('loader-status')) {
-            status.textContent = 'Conexión lenta o en roaming detectada. Intentando cargar...';
-            if (btn) btn.style.display = 'inline-block';
-          }
-        }, 6000);
+        // Secuencia progresiva para roaming y conexiones móviles
+        (function() {
+          var s = document.getElementById('loader-status');
+          var a = document.getElementById('loader-actions');
+          
+          setTimeout(function() {
+            if (!window.__APP_MOUNTED__ && s) {
+              s.textContent = 'Cargando componentes y datos locales...';
+            }
+          }, 2200);
+
+          setTimeout(function() {
+            if (!window.__APP_MOUNTED__ && s) {
+              s.textContent = 'Conexión móvil lenta o en roaming. Finalizando...';
+            }
+          }, 4500);
+
+          setTimeout(function() {
+            if (!window.__APP_MOUNTED__) {
+              if (s) s.textContent = 'La red en roaming tarda en responder';
+              if (a) a.style.display = 'flex';
+            }
+          }, 7000);
+        })();
       </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>
