@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" style="background-color: #0c130d;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,14 +9,58 @@
     <meta property="og:description" content="Control y seguimiento de generación solar en kWh, autoconsumo, excedentes y rentabilidad en euros con sincronización en tiempo real multidispositivo." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    
+    <!-- Prevenir pantalla en blanco inmediata con estilos críticos en línea -->
+    <style>html,body{color:#ecf5ea;min-height:100vh;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background-color:#0c130d!important}@keyframes pulse-sun{0%,to{opacity:.6;transform:scale(.98)}50%{opacity:1;transform:scale(1.02)}}@keyframes spin{0%{transform:rotate(0)}to{transform:rotate(360deg)}}</style>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="./assets/index-CS5S9S2J.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Cm8-BoG1.css">
+    <!-- Carga no bloqueante de tipografía para evitar congelación en redes móviles o roaming -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+    </noscript>
+    <script type="module" crossorigin src="./assets/index-Cu1G3ZiM.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-6qU4qykW.css">
   </head>
-  <body class="bg-[#0c130d] text-[#ecf5ea] antialiased font-sans">
-    <div id="root"></div>
+  <body class="bg-[#0c130d] text-[#ecf5ea] antialiased font-sans" style="background-color: #0c130d;">
+    <div id="root">
+      <!-- Indicador visual inmediato (se reemplaza en cuanto React monta en < 100ms) -->
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background-color:#0c130d; color:#ecf5ea; text-align:center; padding:24px;">
+        <div style="width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg, #15803d, #84cc16); display:flex; align-items:center; justify-content:center; margin-bottom:16px; box-shadow:0 0 25px rgba(132, 204, 22, 0.25); animation:pulse-sun 2s infinite ease-in-out;">
+          <svg style="width:26px; height:26px; color:#0c130d;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="m4.93 4.93 1.41 1.41"></path>
+            <path d="m17.66 17.66 1.41 1.41"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+            <path d="m6.34 17.66-1.41 1.41"></path>
+            <path d="m19.07 4.93-1.41 1.41"></path>
+          </svg>
+        </div>
+        <div style="font-weight:700; font-size:16px; letter-spacing:-0.01em; color:#ecf5ea;">Seguimiento Solar & Rentabilidad</div>
+        <div id="loader-status" style="font-size:12px; color:#8ca48a; margin-top:6px;">Iniciando sistema...</div>
+
+        <!-- Botón de contingencia si la red en roaming es extremadamente lenta o bloquea la descarga -->
+        <button id="loader-retry" onclick="window.location.reload()" style="display:none; margin-top:20px; padding:8px 18px; background-color:#84cc16; color:#0c130d; font-weight:700; font-size:12px; border:none; border-radius:8px; cursor:pointer;">
+          Reintentar conexión
+        </button>
+      </div>
+
+      <script>
+        // Si tras 6 segundos los datos en roaming no han respondido, mostrar aviso y opción de reintento
+        setTimeout(function() {
+          var status = document.getElementById('loader-status');
+          var btn = document.getElementById('loader-retry');
+          if (status && document.getElementById('root') && document.getElementById('loader-status')) {
+            status.textContent = 'Conexión lenta o en roaming detectada. Intentando cargar...';
+            if (btn) btn.style.display = 'inline-block';
+          }
+        }, 6000);
+      </script>
+    </div>
   </body>
 </html>
 

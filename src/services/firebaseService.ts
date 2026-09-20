@@ -185,57 +185,65 @@ export function subscribeToSolarRecords(
     onData(cached);
   }
 
-  const recordsCol = collection(db, 'shared_systems', systemKey, 'records');
-  const q = query(recordsCol);
-
   onStatusChange?.('connecting');
 
-  const unsubscribe = onSnapshot(
-    q,
-    (snapshot) => {
-      onStatusChange?.('syncing');
-      if (snapshot.empty) {
-        // If empty in cloud, initialize with initial historical dataset
-        initializeDefaultRecords(systemKey)
-          .then(() => {
-            saveLocalRecords(systemKey, INITIAL_SOLAR_RECORDS);
-            onData(INITIAL_SOLAR_RECORDS);
-            onStatusChange?.('connected');
-          })
-          .catch((err) => {
-            console.warn('Notice auto-seeding cloud records:', err?.message || err);
-            // Fallback to local
-            const local = getLocalRecords(systemKey);
-            onData(local.length > 0 ? local : INITIAL_SOLAR_RECORDS);
-            onStatusChange?.('connected');
+  try {
+    const recordsCol = collection(db, 'shared_systems', systemKey, 'records');
+    const q = query(recordsCol);
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        onStatusChange?.('syncing');
+        if (snapshot.empty) {
+          // If empty in cloud, initialize with initial historical dataset
+          initializeDefaultRecords(systemKey)
+            .then(() => {
+              saveLocalRecords(systemKey, INITIAL_SOLAR_RECORDS);
+              onData(INITIAL_SOLAR_RECORDS);
+              onStatusChange?.('connected');
+            })
+            .catch((err) => {
+              console.warn('Notice auto-seeding cloud records:', err?.message || err);
+              // Fallback to local
+              const local = getLocalRecords(systemKey);
+              onData(local.length > 0 ? local : INITIAL_SOLAR_RECORDS);
+              onStatusChange?.('connected');
+            });
+        } else {
+          const records: SolarRecord[] = [];
+          snapshot.forEach((docSnap) => {
+            records.push(docSnap.data() as SolarRecord);
           });
-      } else {
-        const records: SolarRecord[] = [];
-        snapshot.forEach((docSnap) => {
-          records.push(docSnap.data() as SolarRecord);
-        });
-        
-        // Sort chronologically (year ascending, month ascending)
-        records.sort((a, b) => {
-          if (a.year !== b.year) return a.year - b.year;
-          return a.month - b.month;
-        });
+          
+          // Sort chronologically (year ascending, month ascending)
+          records.sort((a, b) => {
+            if (a.year !== b.year) return a.year - b.year;
+            return a.month - b.month;
+          });
 
-        // Save to cache and emit
-        saveLocalRecords(systemKey, records);
-        onData(records);
-        onStatusChange?.('connected');
+          // Save to cache and emit
+          saveLocalRecords(systemKey, records);
+          onData(records);
+          onStatusChange?.('connected');
+        }
+      },
+      (error) => {
+        console.warn('Firestore subscription notice (running offline/local mode):', error.message);
+        onStatusChange?.('offline', error.message);
+        const fallback = getLocalRecords(systemKey);
+        onData(fallback.length > 0 ? fallback : INITIAL_SOLAR_RECORDS);
       }
-    },
-    (error) => {
-      console.warn('Firestore subscription notice (running offline/local mode):', error.message);
-      onStatusChange?.('offline', error.message);
-      const fallback = getLocalRecords(systemKey);
-      onData(fallback.length > 0 ? fallback : INITIAL_SOLAR_RECORDS);
-    }
-  );
+    );
 
-  return unsubscribe;
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('Synchronous error starting Firestore listener:', err?.message || err);
+    onStatusChange?.('offline', err?.message);
+    const fallback = getLocalRecords(systemKey);
+    onData(fallback.length > 0 ? fallback : INITIAL_SOLAR_RECORDS);
+    return () => {};
+  }
 }
 
 // Subscribe to settings with cloud-first priority and offline fallback
@@ -247,30 +255,36 @@ export function subscribeToSettings(
   const cachedSettings = getLocalSettings(systemKey);
   onData(cachedSettings);
 
-  const settingsDoc = doc(db, 'shared_systems', systemKey, 'config', 'settings');
-  return onSnapshot(
-    settingsDoc,
-    (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as SolarSettings;
-        const merged: SolarSettings = { ...DEFAULT_SOLAR_SETTINGS, ...data };
-        saveLocalSettings(systemKey, merged);
-        onData(merged);
-      } else {
-        // Cloud does not have settings yet for this systemKey: seed with current local or default
-        const toSeed = getLocalSettings(systemKey);
-        setDoc(settingsDoc, { ...toSeed, updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
-          console.warn('Notice seeding settings to cloud:', err?.message || err);
-        });
-        saveLocalSettings(systemKey, toSeed);
-        onData(toSeed);
+  try {
+    const settingsDoc = doc(db, 'shared_systems', systemKey, 'config', 'settings');
+    return onSnapshot(
+      settingsDoc,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as SolarSettings;
+          const merged: SolarSettings = { ...DEFAULT_SOLAR_SETTINGS, ...data };
+          saveLocalSettings(systemKey, merged);
+          onData(merged);
+        } else {
+          // Cloud does not have settings yet for this systemKey: seed with current local or default
+          const toSeed = getLocalSettings(systemKey);
+          setDoc(settingsDoc, { ...toSeed, updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
+            console.warn('Notice seeding settings to cloud:', err?.message || err);
+          });
+          saveLocalSettings(systemKey, toSeed);
+          onData(toSeed);
+        }
+      },
+      (err) => {
+        console.warn('Settings subscription notice (using local cache):', err.message);
+        onData(getLocalSettings(systemKey));
       }
-    },
-    (err) => {
-      console.warn('Settings subscription notice (using local cache):', err.message);
-      onData(getLocalSettings(systemKey));
-    }
-  );
+    );
+  } catch (err: any) {
+    console.warn('Synchronous error starting Firestore settings listener:', err?.message || err);
+    onData(getLocalSettings(systemKey));
+    return () => {};
+  }
 }
 
 // Save or edit a single month record
