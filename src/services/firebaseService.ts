@@ -69,13 +69,36 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Helper to recursively remove undefined fields so Firestore never throws 'Unsupported field value: undefined'
+export function sanitizeFirestoreData<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        clean[key] = sanitizeFirestoreData(value);
+      } else {
+        clean[key] = value;
+      }
+    }
+  }
+  return clean;
+}
+
 // Helper to determine active sync collection
 // If user selects a shared system key, all devices with that key sync together!
 const DEFAULT_SYSTEM_KEY = 'mi_sistema_solar';
 
+export function normalizeSystemKey(rawKey: string): string {
+  if (!rawKey) return DEFAULT_SYSTEM_KEY;
+  // Trim spaces and replace invalid path characters like slashes
+  const trimmed = rawKey.trim().toLowerCase().replace(/[\/\\]/g, '_');
+  return trimmed || DEFAULT_SYSTEM_KEY;
+}
+
 export function getSystemId(customKey?: string): string {
   try {
-    return customKey?.trim() || localStorage.getItem('solar_sync_key') || DEFAULT_SYSTEM_KEY;
+    const raw = customKey?.trim() || localStorage.getItem('solar_sync_key') || DEFAULT_SYSTEM_KEY;
+    return normalizeSystemKey(raw);
   } catch {
     return DEFAULT_SYSTEM_KEY;
   }
@@ -83,7 +106,8 @@ export function getSystemId(customKey?: string): string {
 
 export function setSystemId(key: string) {
   try {
-    localStorage.setItem('solar_sync_key', key.trim() || DEFAULT_SYSTEM_KEY);
+    const normalized = normalizeSystemKey(key);
+    localStorage.setItem('solar_sync_key', normalized);
   } catch {}
 }
 
@@ -294,61 +318,84 @@ export function subscribeToSettings(
 }
 
 // Save or edit a single month record
-export async function saveRecord(systemKey: string, record: SolarRecord): Promise<void> {
-  // Always update local cache first
+export async function saveRecord(rawSystemKey: string, record: SolarRecord): Promise<void> {
+  const systemKey = normalizeSystemKey(rawSystemKey);
+
+  // 1. Always update local cache first (instant local persistence)
   const current = getLocalRecords(systemKey);
-  const exists = current.some(r => r.id === record.id);
-  const updatedLocal = exists 
-    ? current.map(r => r.id === record.id ? record : r)
-    : [...current, record];
+  const exists = current.some((r) => r.id === record.id);
+  const updatedLocal = exists
+    ? current.map((r) => (r.id === record.id ? record : r))
+    : [...current, record].sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+      });
   saveLocalRecords(systemKey, updatedLocal);
 
+  // 2. Prepare clean data without undefined fields for Firestore
   const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
-  const dataToSave = {
+  const dataToSave = sanitizeFirestoreData({
     ...record,
     updatedAt: new Date().toISOString(),
-  };
+  });
+
+  // 3. Persist to Firestore
   await setDoc(docRef, dataToSave, { merge: true });
 }
 
 // Delete a single month record
-export async function deleteRecord(systemKey: string, recordId: string): Promise<void> {
+export async function deleteRecord(rawSystemKey: string, recordId: string): Promise<void> {
+  const systemKey = normalizeSystemKey(rawSystemKey);
+
   // Update local cache first
   const current = getLocalRecords(systemKey);
-  saveLocalRecords(systemKey, current.filter(r => r.id !== recordId));
+  saveLocalRecords(systemKey, current.filter((r) => r.id !== recordId));
 
   const docRef = doc(db, 'shared_systems', systemKey, 'records', recordId);
   await deleteDoc(docRef);
 }
 
 // Save system settings (potencia pico, inversión, etc.)
-export async function saveSettings(systemKey: string, settings: SolarSettings): Promise<void> {
+export async function saveSettings(rawSystemKey: string, settings: SolarSettings): Promise<void> {
+  const systemKey = normalizeSystemKey(rawSystemKey);
   saveLocalSettings(systemKey, settings);
+
   const docRef = doc(db, 'shared_systems', systemKey, 'config', 'settings');
-  await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+  const dataToSave = sanitizeFirestoreData({
+    ...settings,
+    updatedAt: new Date().toISOString(),
+  });
+  await setDoc(docRef, dataToSave, { merge: true });
 }
 
 // Batch save multiple records (for recalculating cycles or bulk import)
-export async function batchSaveRecords(systemKey: string, records: SolarRecord[]): Promise<void> {
+export async function batchSaveRecords(rawSystemKey: string, records: SolarRecord[]): Promise<void> {
+  const systemKey = normalizeSystemKey(rawSystemKey);
   saveLocalRecords(systemKey, records);
+
   const batch = writeBatch(db);
   for (const record of records) {
     const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
-    batch.set(docRef, { ...record, updatedAt: new Date().toISOString() }, { merge: true });
+    const dataToSave = sanitizeFirestoreData({
+      ...record,
+      updatedAt: new Date().toISOString(),
+    });
+    batch.set(docRef, dataToSave, { merge: true });
   }
   await batch.commit();
 }
 
 // Initialize / Seed default records in batch
-export async function initializeDefaultRecords(systemKey: string): Promise<void> {
+export async function initializeDefaultRecords(rawSystemKey: string): Promise<void> {
+  const systemKey = normalizeSystemKey(rawSystemKey);
   try {
     const batch = writeBatch(db);
     for (const record of INITIAL_SOLAR_RECORDS) {
       const docRef = doc(db, 'shared_systems', systemKey, 'records', record.id);
-      batch.set(docRef, { ...record, updatedAt: new Date().toISOString() });
+      batch.set(docRef, sanitizeFirestoreData({ ...record, updatedAt: new Date().toISOString() }));
     }
     const settingsRef = doc(db, 'shared_systems', systemKey, 'config', 'settings');
-    batch.set(settingsRef, DEFAULT_SOLAR_SETTINGS, { merge: true });
+    batch.set(settingsRef, sanitizeFirestoreData(DEFAULT_SOLAR_SETTINGS), { merge: true });
     await batch.commit();
   } catch (error: any) {
     if (error?.code === 'permission-denied') {

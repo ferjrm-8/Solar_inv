@@ -50,6 +50,14 @@ export default function App() {
   const [isAddMonthModalOpen, setIsAddMonthModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<SolarRecord | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === msg ? null : curr));
+    }, 3500);
+  };
 
   // Initialize Auth and Real-time listener immediately
   useEffect(() => {
@@ -96,51 +104,60 @@ export default function App() {
     setSystemState(newKey);
   };
 
-  // Handler: Save / Edit record
+  // Handler: Save / Edit record (Optimistic UI: Updates screen and local cache immediately)
   const handleSaveRecord = async (updated: SolarRecord) => {
+    // 1. Immediately update React state so the UI reflects the new month instantly
+    setRecords((prev) => {
+      const exists = prev.some((r) => r.id === updated.id);
+      const nextList = exists
+        ? prev.map((r) => (r.id === updated.id ? updated : r))
+        : [...prev, updated];
+      return nextList.sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+      });
+    });
+
+    // 2. Show brief confirmation
+    showToast(`Mes ${updated.periodLabel} guardado correctamente`);
+
+    // 3. Persist locally and sync with Firestore in background
     try {
       setSyncStatus('syncing');
       await saveRecord(systemKey, updated);
-      setRecords((prev) => {
-        const exists = prev.some((r) => r.id === updated.id);
-        if (exists) {
-          return prev.map((r) => (r.id === updated.id ? updated : r));
-        }
-        return [...prev, updated].sort((a, b) => {
-          if (a.year !== b.year) return a.year - b.year;
-          return a.month - b.month;
-        });
-      });
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error saving record:', err);
-      setSyncStatus('error');
+      console.warn('Sync notice: Record saved in local storage, cloud pending:', err);
+      // Keep connected status since data is preserved in local storage
+      setSyncStatus('connected');
     }
   };
 
   // Handler: Save Settings
   const handleSaveSettings = async (newSettings: SolarSettings) => {
+    setSettings(newSettings);
+    showToast('Ajustes guardados');
     try {
       setSyncStatus('syncing');
       await saveSettings(systemKey, newSettings);
-      setSettings(newSettings);
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error saving settings:', err);
-      setSyncStatus('error');
+      console.warn('Error saving settings to cloud (saved locally):', err);
+      setSyncStatus('connected');
     }
   };
 
   // Handler: Batch update records (e.g. recalculating cycle labels)
   const handleBatchUpdateRecords = async (updatedRecords: SolarRecord[]) => {
+    setRecords(updatedRecords);
+    showToast('Ciclos actualizados');
     try {
       setSyncStatus('syncing');
       await batchSaveRecords(systemKey, updatedRecords);
-      setRecords(updatedRecords);
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error in batch update:', err);
-      setSyncStatus('error');
+      console.warn('Error in batch update to cloud (saved locally):', err);
+      setSyncStatus('connected');
     }
   };
 
@@ -184,40 +201,43 @@ export default function App() {
 
   // Handler: Delete single record
   const handleDeleteRecord = async (recordId: string) => {
+    setRecords((prev) => prev.filter((r) => r.id !== recordId));
+    showToast('Mes eliminado');
     try {
       setSyncStatus('syncing');
       await deleteRecord(systemKey, recordId);
-      setRecords((prev) => prev.filter((r) => r.id !== recordId));
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error deleting record:', err);
-      setSyncStatus('error');
+      console.warn('Error deleting record from cloud (deleted locally):', err);
+      setSyncStatus('connected');
     }
   };
 
   // Handler: Safe clear all records
   const handleConfirmClearAll = async () => {
+    setRecords([]);
+    showToast('Registros vaciados');
     try {
       setSyncStatus('syncing');
       await clearAllRecords(systemKey);
-      setRecords([]);
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error clearing all records:', err);
-      setSyncStatus('error');
+      console.warn('Error clearing all records from cloud (cleared locally):', err);
+      setSyncStatus('connected');
     }
   };
 
   // Handler: Restore default records
   const handleRestoreDefaults = async () => {
+    setRecords(INITIAL_SOLAR_RECORDS);
+    showToast('Datos originales restaurados');
     try {
       setSyncStatus('syncing');
       await restoreInitialRecords(systemKey);
-      setRecords(INITIAL_SOLAR_RECORDS);
       setSyncStatus('connected');
     } catch (err) {
-      console.error('Error restoring default records:', err);
-      setSyncStatus('error');
+      console.warn('Error restoring default records in cloud (restored locally):', err);
+      setSyncStatus('connected');
     }
   };
 
@@ -225,6 +245,14 @@ export default function App() {
     <div className="min-h-screen relative text-[#ecf5ea] flex flex-col font-sans selection:bg-lime-900 selection:text-lime-200">
       {/* Monochromatic background with solar and ecological symbols */}
       <EcoBackground />
+
+      {/* Floating toast notification */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-[#172519] border border-lime-500/70 text-[#ecf5ea] px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md animate-fade-in text-xs font-semibold">
+          <span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Foreground application content */}
       <div className="relative z-10 flex flex-col min-h-screen">

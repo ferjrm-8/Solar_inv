@@ -21,6 +21,29 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords, settin
   const [month, setMonth] = useState<number>(currentMonth);
   const [cycleLabel, setCycleLabel] = useState<string>('');
   const [customCycle, setCustomCycle] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Auto-detect the next month to add based on existing records
+  useEffect(() => {
+    if (isOpen && existingRecords.length > 0) {
+      setErrorMessage(null);
+      // Sort existing to find the latest
+      const sorted = [...existingRecords].sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+      });
+      const latest = sorted[sorted.length - 1];
+      if (latest) {
+        if (latest.month === 12) {
+          setYear(latest.year + 1);
+          setMonth(1);
+        } else {
+          setYear(latest.year);
+          setMonth(latest.month + 1);
+        }
+      }
+    }
+  }, [isOpen, existingRecords]);
 
   // Theoretical
   const [string1Teorica, setString1Teorica] = useState<number>(422.1);
@@ -130,13 +153,14 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords, settin
         quedaBateriaSb,
         facturaReal,
         ahorroDirecto,
-        notas: notas.trim() || undefined,
+        ...(notas.trim() ? { notas: notas.trim() } : {}),
       };
 
       await onSave(newRecord);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error adding record:', err);
+      setErrorMessage(err?.message || 'Error al guardar el mes. Se ha guardado en local.');
     } finally {
       setSaving(false);
     }
@@ -171,6 +195,12 @@ export function AddMonthModal({ isOpen, onClose, onSave, existingRecords, settin
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorMessage && (
+          <div className="mt-4 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-200">
+            <span className="font-bold">Aviso: </span> {errorMessage}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-5">
           {/* Period and Annual Cycle Selection */}
